@@ -1,0 +1,8 @@
+# Csv files
+*.csv
+# xls files
+*.xls
+# xlsx
+*.xlsx
+# zip
+*.zip
