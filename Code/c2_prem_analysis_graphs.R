@@ -206,191 +206,94 @@ print(dim(cty_data)[1] / 17 / 3210)
 #
 # =========================================================================
 
-zone_cut <- 25
+zone_cut <- 20
 treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
+data %>% tabyl(Year)
+
+
+data %>%
+  filter(State_Code %in% treated_states) %>%
+  filter(State_Code != "MA") %>%
+  mutate(Zone = case_when(
+    distma <= zone_cut ~ "Border",
+    distma > zone_cut &
+      distma <= 2 * zone_cut ~ "Next",
+    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"
+  )) %>%
+  select(State_Code, zip, Zone) %>%
+  distinct() %>%
+  tabyl(State_Code, Zone) %>%
+  adorn_percentages("row") %>%
+  adorn_rounding(2) %>%
+  adorn_ns()
+
 
 
 # ========================================================
 # Graphical inspection:
 #
-# Zip Codes: Border vs Inner
-# Zip Codes: Border vs Rest of US
+# A. Zip Codes: Border vs Rest of US
+# B. Zip Codes: Border vs Inner
 # ========================================================
 
-
-# ----------------------------
-# Zip Codes: Border v Inner
-# One graph for each border state
-# ----------------------------
-
-### Average Number of Shops in zip code
-data %>%
-  filter(is.na(distma) == F) %>%
-  # filter(Year >= 2000 & Year <= 2016) %>%
-  mutate(Zone = case_when(
-    distma <= zone_cut ~ "Border",
-    distma > zone_cut &
-      distma <= 2 * zone_cut ~ "Next to Border",
-    distma > 2 * zone_cut ~ "Inner"
-  )) %>%
-  group_by(State_Code, Zone, Year) %>%
-  # mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
-  mutate(Shops = sum(as.numeric(n1_4), na.rm = T)) %>%
-  ungroup() %>%
-  select(State_Code, Zone, Year, Shops) %>%
-  distinct() %>%
-  # ggplot(aes(x = Year, y = Sum_n1_4, color = factor(Zone))) +
-  ggplot(aes(x = Year, y = Shops, color = Zone)) +
-  geom_line() +
-  geom_vline(xintercept = 2012) +
-  facet_wrap(~State_Code, scales = "free")
-
-
-data %>%
-  filter(is.na(distma) == F) %>%
-  mutate(Zone = case_when(
-    distma <= zone_cut ~ "Border",
-    distma > zone_cut &
-      distma <= 2 * zone_cut ~ "Next to Border",
-    distma > 2 * zone_cut ~ "Inner"),
-         T_Year = if_else(Year >= 2012, 1, 0),
-         T = if_else(Zone == "Border" & T_Year == 1, 1, 0)) %>%
-  filter(Zone != "Inner") %>%
-  filter(Year <= 2014) %>%
-  feols(n1_4 ~ T | to_factor(Year) + to_factor(zip),
-        data = .)
-
-data %>%
-  filter(is.na(distma) == F) %>%
-  mutate(Zone = case_when(
-    distma <= zone_cut ~ "Border",
-    distma > zone_cut &
-      distma <= 2 * zone_cut ~ "Next to Border",
-    distma > 2 * zone_cut ~ "Inner"),
-         T_Year = if_else(Year >= 2012, 1, 0),
-         T = if_else(Zone == "Border" & T_Year == 1, 1, 0)) %>%
-  filter(Zone != "Next to Border") %>%
-  filter(Year <= 2014) %>%
-  filter(State_Code == "RI") %>%
-  feols(n1_4 ~ T | to_factor(Year) + to_factor(zip),
-        data = .)
-
-
-### Total (Sum) Number of Shops in zip code
-### Exclude inner
-data %>%
-  filter(is.na(distma) == F) %>%
-  # filter(Year >= 2000 & Year <= 2016) %>%
-  mutate(Zone = case_when(
-    distma <= zone_cut ~ "Border",
-    distma > zone_cut &
-      distma <= 2 * zone_cut ~ "Next to Border",
-    distma > 2 * zone_cut ~ "Inner"
-  )) %>%
-  filter(Zone != "Inner") %>%
-  group_by(State_Code, Zone, Year) %>%
-  # mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
-  mutate(Shops = sum(as.numeric(n1_4), na.rm = T)) %>%
-  ungroup() %>%
-  select(State_Code, Zone, Year, Shops) %>%
-  distinct() %>%
-  # ggplot(aes(x = Year, y = Sum_n1_4, color = factor(Zone))) +
-  ggplot(aes(x = Year, y = Shops, color = Zone)) +
-  geom_line() +
-  geom_vline(xintercept = 2012) +
-  facet_wrap(~State_Code, scales = "free")
-
-
-# ----------------------------
-# Zip Codes: Border v Inner
-# One graph for all border state
-# ----------------------------
-
-### Average Number of Shops in zip code
-
-rest_inner <- data %>%
-  filter(State_Code %in% treated_states & distma > zone_cut & distma <= 2 * zone_cut) %>%
-  filter(State_Code != "MA") %>%
-  filter(is.na(State_Code) == F) %>%
-  mutate(Zone = 0) %>%
-  group_by(Year) %>%
-  mutate(Shops = mean(n1_4, na.rm = T)) %>%
-  ungroup() %>%
-  select(Year, Zone, Shops) %>%
-  distinct()
-
-
-treat_sts <- data %>%
-  filter(State_Code %in% treated_states & distma <= zone_cut) %>%
-  filter(State_Code != "MA") %>%
-  mutate(Zone = 1) %>%
-  group_by(Zone, Year) %>%
-  mutate(Shops = mean(n1_4, na.rm = T)) %>%
-  ungroup() %>%
-  select(Year, Zone, Shops) %>%
-  distinct()
-
-
-treat_sts <- rbind(treat_sts, rest_inner)
-
-
-treat_sts %>%
-  ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
-  geom_line() +
-  geom_vline(xintercept = 2012)
-
-
-
-### Total (Sum) Number of Shops in zip code
-
-rest_inner <- data %>%
-  filter(State_Code %in% treated_states &
-         distma > zone_cut &
-         distma <= 2 * zone_cut) %>%
-  filter(State_Code != "MA") %>%
-  filter(is.na(State_Code) == F) %>%
-  mutate(Zone = 0) %>%
-  group_by(Year) %>%
-  mutate(Shops = sum(n1_4, na.rm = T)) %>%
-  ungroup() %>%
-  select(Year, Zone, Shops) %>%
-  distinct()
-
-
-treat_sts <- data %>%
-  filter(State_Code %in% treated_states & distma <= zone_cut) %>%
-  filter(State_Code != "MA") %>%
-  mutate(Zone = 1) %>%
-  group_by(Zone, Year) %>%
-  mutate(Shops = sum(n1_4, na.rm = T)) %>%
-  ungroup() %>%
-  select(Year, Zone, Shops) %>%
-  distinct()
-
-
-treat_sts <- rbind(treat_sts, rest_inner)
-
-
-treat_sts %>%
-  ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
-  geom_line() +
-  geom_vline(xintercept = 2012)
-
-
-
-# ----------------------------------
-# Zip Codes: Border vs Rest of US
-# One graph for each border state
+# ---------------------------------------
 #
-### Total (Sum) Number of Shops in zip code
-### SKIP
-### the rest of the US will have an insane number of shops
+# A.1. Zip Codes: Border vs Rest of US
+# One graph for *ALL* border state {{{
+# ----------------------------------
+
+rest_us <- data %>%
+  filter(State_Code %notin% treated_states |
+    (State_Code %in% treated_states & distma > zone_cut) |
+    (State_Code %in% treated_states & is.na(distma))) %>%
+  filter(State_Code != "MA") %>%
+  filter(is.na(State_Code) == F) %>%
+  mutate(Zone = 0) %>%
+  group_by(Year) %>%
+  mutate(Shops = mean(n1_4, na.rm = T)) %>%
+  ungroup() %>%
+  select(Year, Zone, Shops) %>%
+  distinct()
+
+treat_sts <- data %>%
+  filter(State_Code %in% treated_states & distma <= zone_cut) %>%
+  filter(State_Code != "MA") %>%
+  mutate(Zone = 1) %>%
+  group_by(Zone, Year) %>%
+  mutate(Shops = mean(n1_4, na.rm = T)) %>%
+  ungroup() %>%
+  select(Year, Zone, Shops) %>%
+  distinct()
+
+
+treat_sts <- rbind(treat_sts, rest_us)
+
+treat_sts %>%
+  ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
+  geom_line() +
+  geom_vline(xintercept = 2012)
+
+
+# }}}
+#
+# ---------------------------------------
+
+
+# -------------------------------------
+#
+# A.2. Zip Codes: Border vs Rest of US
+# One graph for *EACH* border state {{{
+#
+# 1. Average
+### SKIP: Sum of Shops in zip code
+# -------------------------------------
 # ----------------------------------
 
 ### Average Number of Shops in zip code
 rest_us <- data %>%
   filter(State_Code %notin% treated_states |
-    (State_Code %in% treated_states & distma > zone_cut)) %>%
+    (State_Code %in% treated_states & distma > zone_cut) |
+    (State_Code %in% treated_states & is.na(distma))) %>%
   filter(State_Code != "MA") %>%
   filter(is.na(State_Code) == F) %>%
   mutate(Zone = 0, State_Code = "US") %>%
@@ -430,17 +333,107 @@ treat_sts %>%
   facet_wrap(~State_Code, scales = "free")
 
 
+# }}}
+#
+# -------------------------------------
 
 
-# ----------------------------------
-# Zip Codes: Border vs Rest of US
-# One graph for all border state
-# ----------------------------------
+# -------------------------------------
+#
+# B.1 Zip Codes: Border v Inner
+# One graph for *EACH* border state {{{
+# -------------------------------------
+#
+# 1. Average
+# 2. Sum
 
-rest_us <- data %>%
-  filter(State_Code %notin% treated_states |
-    (State_Code %in% treated_states & distma > zone_cut)) %>%
-  filter(State_Code != "MA") %>% 
+
+
+### 1. Average Number of Shops in zip code
+data %>%
+  filter(is.na(distma) == F) %>%
+  # filter(Year >= 2000 & Year <= 2014) %>%
+  mutate(Zone = case_when(
+    distma <= zone_cut ~ "Border",
+    distma > zone_cut &
+      distma <= 2 * zone_cut ~ "Next to Border",
+    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"
+  )) %>%
+  group_by(State_Code, Zone, Year) %>%
+  # mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
+  mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
+  ungroup() %>%
+  select(State_Code, Zone, Year, Shops) %>%
+  distinct() %>%
+  # ggplot(aes(x = Year, y = Sum_n1_4, color = factor(Zone))) +
+  ggplot(aes(x = Year, y = Shops, color = Zone)) +
+  geom_line() +
+  geom_vline(xintercept = 2012) +
+  facet_wrap(~State_Code, scales = "free")
+
+
+data %>%
+  filter(is.na(distma) == F) %>%
+  mutate(Zone = case_when(
+    distma <= zone_cut ~ "Border",
+    distma > zone_cut &
+      distma <= 2 * zone_cut ~ "Next to Border",
+    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner",
+         T_Year = if_else(Year >= 2012, 1, 0),
+         T = if_else(Zone == "Border" & T_Year == 1, 1, 0)) %>%
+  filter(Zone != "Inner") %>%
+  filter(Year <= 2014) %>%
+  feols(n1_4 ~ T | to_factor(Year) + to_factor(zip),
+        data = .)
+
+
+
+### 2. Sum of Shops in zip code
+### Exclude inner
+data %>%
+  filter(is.na(distma) == F) %>%
+  # filter(Year >= 2000 & Year <= 2016) %>%
+  mutate(Zone = case_when(
+    distma <= zone_cut ~ "Border",
+    distma > zone_cut &
+      distma <= 2 * zone_cut ~ "Next to Border",
+    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"
+  )) %>%
+  filter(Zone != "Inner") %>%
+  group_by(State_Code, Zone, Year) %>%
+  # mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
+  mutate(Shops = sum(as.numeric(n1_4), na.rm = T)) %>%
+  ungroup() %>%
+  select(State_Code, Zone, Year, Shops) %>%
+  distinct() %>%
+  # ggplot(aes(x = Year, y = Sum_n1_4, color = factor(Zone))) +
+  ggplot(aes(x = Year, y = Shops, color = Zone)) +
+  geom_line() +
+  geom_vline(xintercept = 2012) +
+  facet_wrap(~State_Code, scales = "free")
+
+# }}}
+#
+# -------------------------------------
+
+
+# -------------------------------------
+#
+# B.2 Zip Codes: Border v Inner
+# One graph for *ALL* border state {{{
+#
+# 1. Average
+# 2. Sum
+# -------------------------------------
+
+
+
+### 1. Average Number of Shops in zip code
+
+rest_inner <- data %>%
+  filter(State_Code %in% treated_states &
+         ((distma > zone_cut & distma <= 2 * zone_cut) | (is.na(distma))) %>%
+  filter(State_Code != "MA") %>%
   filter(is.na(State_Code) == F) %>%
   mutate(Zone = 0) %>%
   group_by(Year) %>%
@@ -448,6 +441,7 @@ rest_us <- data %>%
   ungroup() %>%
   select(Year, Zone, Shops) %>%
   distinct()
+
 
 treat_sts <- data %>%
   filter(State_Code %in% treated_states & distma <= zone_cut) %>%
@@ -460,12 +454,55 @@ treat_sts <- data %>%
   distinct()
 
 
-treat_sts <- rbind(treat_sts, rest_us)
+treat_sts <- rbind(treat_sts, rest_inner)
+
 
 treat_sts %>%
   ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
   geom_line() +
   geom_vline(xintercept = 2012)
+
+
+
+### 2. Sum of Shops in zip code
+
+rest_inner <- data %>%
+  filter(State_Code %in% treated_states &
+         ((distma > zone_cut & distma <= 2 * zone_cut) | (is.na(distma)))) %>%
+  filter(State_Code != "MA") %>%
+  filter(is.na(State_Code) == F) %>%
+  mutate(Zone = 0) %>%
+  group_by(Year) %>%
+  mutate(Shops = sum(n1_4, na.rm = T)) %>%
+  ungroup() %>%
+  select(Year, Zone, Shops) %>%
+  distinct()
+
+
+treat_sts <- data %>%
+  filter(State_Code %in% treated_states & distma <= zone_cut) %>%
+  filter(State_Code != "MA") %>%
+  mutate(Zone = 1) %>%
+  group_by(Zone, Year) %>%
+  mutate(Shops = sum(n1_4, na.rm = T)) %>%
+  ungroup() %>%
+  select(Year, Zone, Shops) %>%
+  distinct()
+
+
+treat_sts <- rbind(treat_sts, rest_inner)
+
+
+treat_sts %>%
+  ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
+  geom_line() +
+  geom_vline(xintercept = 2012)
+
+
+# }}}
+#
+# -------------------------------------
+
 
 
 
@@ -486,11 +523,17 @@ treat_sts %>%
 
 end_yr <- 2016
 start_yr <- 2000
+cut <- 15
+
+
+cty_data %>%
+    select(distma_min, distma_max) %>%
+    head()
 
 ### Define Treatment to be within cutoff
 cty_data <- cty_data %>%
-    # mutate(Treat = if_else(distma_min + distma_max < 2 * cut, 1, 0))
-    mutate(Treat = if_else(distma_min <= cut, 1, 0))
+    mutate(Treat0 = if_else(distma_min + distma_max < 1.5 * cut, 1, 0),
+           Treat1 = if_else(distma_min <= cut, 1, 0))
 
 
 ### Drop MA
