@@ -206,10 +206,11 @@ print(dim(cty_data)[1] / 17 / 3210)
 #
 # =========================================================================
 
-zone_cut <- 20
-treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
-data %>% tabyl(Year)
 
+treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
+
+
+zone_cut <- 25
 
 data %>%
   filter(State_Code %in% treated_states) %>%
@@ -269,10 +270,63 @@ treat_sts <- data %>%
 treat_sts <- rbind(treat_sts, rest_us)
 
 treat_sts %>%
+  filter(Year >= 2006) %>%
   ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
   geom_line() +
   geom_vline(xintercept = 2012)
 
+
+
+# -------
+
+data %>%
+  filter(is.na(State_Code) == F) %>%
+  filter(State_Code != "MA") %>%
+  filter(Year >= 2006) %>%
+  mutate(Zone = if_else(State_Code %notin% treated_states |
+    (State_Code %in% treated_states & distma > zone_cut) |
+    (State_Code %in% treated_states & is.na(distma)), 0, 1),
+         Yt = if_else(Year >= 2012, 1, 0),
+         log_n = log(1 + n1_4)) %>%
+    feols(log_n ~ (Zone * Yt) | Zone + Year,
+          data = .) %>%
+    tidy() %>%
+    adorn_rounding(2)
+
+
+data %>% tabyl(Year)
+
+data %>%
+  filter(is.na(State_Code) == F) %>%
+  filter(State_Code != "MA") %>%
+  filter(Year >= 2005) %>%
+  filter(State_Code %in% treated_states) %>%
+  mutate(Zone = if_else(#State_Code %notin% treated_states, 0, 1),
+    (State_Code %in% treated_states & distma > zone_cut) &
+    (State_Code %in% treated_states & distma < 2 * zone_cut),
+    # (State_Code %in% treated_states & is.na(distma)),
+    0, 1),
+         Yt0 = if_else(Year == 2012, 1, 0),
+         log_n = log(1 + n1_4),
+         perc = n1_4 / n_total) %>%
+    feols(n_total ~ (Zone * Yt0) | Zone + to_factor(Year),
+          data = .)
+
+data %>%
+  filter(is.na(State_Code) == F) %>%
+  filter(State_Code != "MA") %>%
+  filter(Year >= 2005) %>%
+  filter(State_Code %in% treated_states) %>%
+  mutate(Zone = if_else(#State_Code %notin% treated_states, 0, 1),
+    (State_Code %in% treated_states & distma > zone_cut) &
+    (State_Code %in% treated_states & distma < 2 * zone_cut),
+    # (State_Code %in% treated_states & is.na(distma)),
+    0, 1),
+         Yt0 = if_else(Year == 2012, 1, 0),
+         log_n = log(1 + n1_4),
+         perc = n1_4 / n_total) %>%
+    feols(n_total ~ (Zone * to_factor(Year)) | Zone + to_factor(Year),
+          data = .)
 
 # }}}
 #
