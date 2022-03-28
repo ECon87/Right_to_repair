@@ -97,7 +97,7 @@ border_states_zip.reset_index(drop = True, inplace = True)
 
 border_states_zip['Short_Dist_MA'] = pd.np.nan
 
-shortest_distance(border_states_zip, ma_zip, var = 'Short_Dist_MA')
+utils.shortest_distance(border_states_zip, ma_zip, var = 'Short_Dist_MA')
 
 
 # ============================

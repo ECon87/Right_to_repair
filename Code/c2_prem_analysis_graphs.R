@@ -6,6 +6,7 @@ library(sjmisc)
 library(broom)
 library(tidysynth)
 library(readr)
+library(kableExtra)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -15,6 +16,7 @@ library(readr)
 
 rootdir <- "/home/econ87/Research/Papers/Right_to_repair/Note/"
 datadir <- paste0(rootdir, "Data/")
+codedir <- paste0(rootdir, "Code/")
 
 # ===============================================
 #   * load data *
@@ -27,9 +29,11 @@ data <- read_csv(file, col_types = cols(.default = "c"))
 data <- data %>% select(-c("...1", "index"))
 
 
-# Drop if missing n1_4
+# Drop if missing n1_4 or n_total
 data <- data %>% filter(is.na(n1_4) == F)
+data <- data %>% filter(is.na(n_total) == F)
 
+row.names(data) <- NULL
 
 # =========================================================================
 #
@@ -37,166 +41,32 @@ data <- data %>% filter(is.na(n1_4) == F)
 #
 # =========================================================================
 
-# ===============================================
-# DATA DROP
-#
-# Do I have zip codes missing for some Years?
-# Keep Years 2000-2016 since it is the maximum b/ced sample
-# Also I seem to be missing a lot of zips in 2016.
-# ===============================================
-
-# Drop if Year > 2016
-data <- data %>% filter(as.numeric(Year) <= 2016)
+source(paste0(codedir, "c2a_inner_data_manipulation.R"))
 
 
-data <- data %>%
-  group_by(zip) %>%
-  mutate(Count = n()) %>%
-  ungroup()
+
+####### Drop if in treated state and missing distance ###########
+### missing Zone_Band -> distma > 200
+
+treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
+
+data %>%
+  filter(State_Code %in% treated_states) %>%
+  filter(State_Code != "MA") %>%
+  filter(is.na(Zone_Band)) %>%
+  select(zip, State_Code, Lat_Long, Zone_Band, distma) %>%
+  distinct() %>%
+  filter(is.na(Zone_Band)) %>%
+  summary()
 
 
-# Drop Year > 2016 and Count < 17
-data <- data %>% filter(Count == 17)
-
-
-# #######
-
-row.names(data) <- NULL
-
-# #######
-
-
-# ===============================================
-# DATA DROP 2
-#
-# Non comparable observations
-# If nX_Y = N then either non-comparable or available.
-# Drop the zipcodes wiht at least one N!
-#
-# Also, there are some missing values. Thes are unmatched
-# observations from the merge in the file c1d!
-#
-# For now focus the analysis to n_total and n1_4
-# ===============================================
-
-
-# Drop if zip code contains an "N"
-data <- data %>%
-  mutate(
-    n_total = if_else(n_total == "N", "-1000", n_total),
-    n1_4 = if_else(n1_4 == "N", "-1000", n1_4),
-    n5_9 = if_else(n5_9 == "N", "-1000", n5_9),
-    n10_19 = if_else(n10_19 == "N", "-1000", n10_19),
-    n20_49 = if_else(n20_49 == "N", "-1000", n20_49),
-    n50_99 = if_else(n50_99 == "N", "-1000", n50_99),
-    n100_249 = if_else(n100_249 == "N", "-1000", n100_249),
-    n250_499 = if_else(n250_499 == "N", "-1000", n250_499),
-    n500_999 = if_else(n500_999 == "N", "-1000", n500_999),
-    n1000 = if_else(n1000 == "N", "-1000", n1000),
-  ) %>%
-  mutate(
-    n_total = as.numeric(n_total),
-    n1_4 = as.numeric(n1_4),
-    n5_9 = as.numeric(n5_9),
-    n10_19 = as.numeric(n10_19),
-    n20_49 = as.numeric(n20_49),
-    n50_99 = as.numeric(n50_99),
-    n100_249 = as.numeric(n100_249),
-    n250_499 = as.numeric(n250_499),
-    n500_999 = as.numeric(n500_999),
-    n1000 = as.numeric(n1000),
-  ) %>%
-  rowwise() %>%
-  mutate(Min_n = min(c_across(n_total:n1_4)))
+### Fix Zone Band
 
 data <- data %>%
-  group_by(zip) %>%
-  mutate(Min_n = min(Min_n)) %>%
-  ungroup()
-
-
-data <- data %>% filter(Min_n >= 0)
-
-## Drop Count, Min_n and _merge var
-data <- data %>% select(-c("Count", "_merge", "Min_n"))
-
-# ================================================
-# Numeric: make some variables numeric
-# ================================================
-
-
-data <- data %>%
-  mutate(
-    zip = as.numeric(zip),
-    Year = as.numeric(Year),
-    Census_Year = as.numeric(Year),
-    Short_Dist_MA = as.numeric(Short_Dist_MA),
-    Zone_Band = as.numeric(Zone_Band),
-    State_Population = as.numeric(State_Population),
-    Population = as.numeric(Population),
-    Population_Share = as.numeric(Population_Share),
-    Inc_percapita = as.numeric(Inc_percapita),
-    allmv_pvt = as.numeric(allmv_pvt),
-    allmv_pub = as.numeric(allmv_pub),
-    allmv_total = as.numeric(allmv_total),
-    vehicle_miles = as.numeric(vehicle_miles)
-  )
-
-# ================================================
-# Make FHA data into county equivalents since now
-# they are the state ones.
-# Assume uniform distribution ==> Pop_Share x FHA
-# ================================================
-
-data <- data %>%
-    mutate(allmv_pvt = Population_Share * allmv_pvt,
-           allmv_pub = Population_Share * allmv_pub,
-           allmv_total = Population_Share * allmv_total,
-           vehicle_miles = Population_Share * vehicle_miles)
-
-
-
-
-
-# ===============================================
-# Get Min and Max distance from MA for counties
-# in neighboring states.
-# Recall that distance is missing by default for
-# some zip codes. In such case, replace with the max
-# distance among available distances.
-# If distance is missing for all zip codes in county
-# then definitely not treated.
-# ===============================================
-
-data <- data %>%
-    group_by(State_Code, County) %>%
-    mutate(distma_min = min(Short_Dist_MA),
-           distma_max = max(Short_Dist_MA)) %>%
-    rename(distma = Short_Dist_MA) %>%
-    ungroup()
-
-
-# =============================================
-# Get County data
-# =============================================
-
-
-cty_data <- data %>%
-    group_by(State_Code, County) %>%
-    mutate(n_total_cty = sum(n_total),
-           n1_4_cty = sum(n1_4)) %>%
-    select(-c("zip", "Lat_Long", "distma", "Zone_Band", "Lat_nom", "Long_nom",
-              "City",
-              "n_total", "n1_4", "n5_9", "n10_19", "n20_49", "n50_99",
-              "n100_249", "n250_499", "n500_999", "n1000")) %>%
-    distinct()
-
-
-# ========================================
-# Retention rate
-# ========================================
-
-print(dim(cty_data)[1] / 17 / 3210)
+    mutate(Zone_Band = if_else(
+            State_Code %in% treated_states &
+                is.na(Zone_Band), 201, Zone_Band))
+ 
 
 
 
@@ -204,29 +74,37 @@ print(dim(cty_data)[1] / 17 / 3210)
 #
 #                           DiD: GRAPHS
 #
+#
+# From the cross-tabulation of Zone and State, it is best to limit the analysis
+# that compares border zip codes and inner zip codes to CT & NH!!!
+# These are the only states with (relative) uniform distribution of zip codes.
+#
+# For the analysis for which I compare with rest of the US, I can include
+# the rest of the states.
+
 # =========================================================================
-
-
-treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
 
 
 zone_cut <- 25
 
+treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
+
+
+# Cross-tabulation between Zone and State
 data %>%
   filter(State_Code %in% treated_states) %>%
   filter(State_Code != "MA") %>%
-  mutate(Zone = case_when(
-    distma <= zone_cut ~ "Border",
-    distma > zone_cut &
-      distma <= 2 * zone_cut ~ "Next",
-    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"
-  )) %>%
-  select(State_Code, zip, Zone) %>%
+  select(zip, Zone_Band, State_Code) %>%
   distinct() %>%
-  tabyl(State_Code, Zone) %>%
-  adorn_percentages("row") %>%
+  tabyl(Zone_Band, State_Code) %>%
+  adorn_percentages("col") %>%
   adorn_rounding(2) %>%
-  adorn_ns()
+  adorn_ns() %>%
+  kable("markdown")
+
+
+
+
 
 
 
@@ -243,6 +121,7 @@ data %>%
 # One graph for *ALL* border state {{{
 # ----------------------------------
 
+# Y: n1_4
 rest_us <- data %>%
   filter(State_Code %notin% treated_states |
     (State_Code %in% treated_states & distma > zone_cut) |
@@ -270,63 +149,72 @@ treat_sts <- data %>%
 treat_sts <- rbind(treat_sts, rest_us)
 
 treat_sts %>%
-  filter(Year >= 2006) %>%
+  # filter(Year >= 2006) %>%
   ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
   geom_line() +
   geom_vline(xintercept = 2012)
 
 
 
-# -------
+# ----------------
+# Regression
 
-data %>%
+regdata <- data %>%
   filter(is.na(State_Code) == F) %>%
   filter(State_Code != "MA") %>%
-  filter(Year >= 2006) %>%
   mutate(Zone = if_else(State_Code %notin% treated_states |
-    (State_Code %in% treated_states & distma > zone_cut) |
-    (State_Code %in% treated_states & is.na(distma)), 0, 1),
+                        (State_Code %in% treated_states & distma > zone_cut) |
+                        (State_Code %in% treated_states & is.na(distma)), 0, 1),
+         log_n1_4 = log(1 + n1_4),
+         log_ntotal = log(1 + n_total),
          Yt = if_else(Year >= 2012, 1, 0),
-         log_n = log(1 + n1_4)) %>%
-    feols(log_n ~ (Zone * Yt) | Zone + Year,
-          data = .) %>%
-    tidy() %>%
-    adorn_rounding(2)
+         DID = Zone * Yt)
 
 
-data %>% tabyl(Year)
+# regdata <- panel(regdata, ~ zip + Year)
 
-data %>%
-  filter(is.na(State_Code) == F) %>%
-  filter(State_Code != "MA") %>%
-  filter(Year >= 2005) %>%
-  filter(State_Code %in% treated_states) %>%
-  mutate(Zone = if_else(#State_Code %notin% treated_states, 0, 1),
-    (State_Code %in% treated_states & distma > zone_cut) &
-    (State_Code %in% treated_states & distma < 2 * zone_cut),
-    # (State_Code %in% treated_states & is.na(distma)),
-    0, 1),
-         Yt0 = if_else(Year == 2012, 1, 0),
-         log_n = log(1 + n1_4),
-         perc = n1_4 / n_total) %>%
-    feols(n_total ~ (Zone * Yt0) | Zone + to_factor(Year),
+names(regdata)
+
+est0_1_4 <- feols(n1_4 ~ DID +
+              distma + Population + Inc_percapita +
+              allmv_total + vehicle_miles |
+              to_factor(Yt) + to_factor(Zone), data = regdata)
+
+est0_ntotal <- feols(n_total ~ DID +
+              distma + Population + Inc_percapita +
+              allmv_total + vehicle_miles |
+              to_factor(Yt) + to_factor(Zone), data = regdata)
+
+etable(est0_1_4, est0_ntotal)
+
+
+
+est1 <- regdata %>% feols(n_total ~ l(DID, -2:6), data = .)
+
+feols(n_total ~ l(DID, -2:4), panel.id = ~zip + Year, data = regdata)
+
+regdata %>%
+    arrange(zip, Year) %>%
+    group_by(zip) %>%
+    mutate(
+           lead1 = dplyr::lead(DID, n = 1),
+           lead2 = dplyr::lead(DID, n = 2),
+           lag1 = dplyr::lag(DID, n = 1),
+           lag2 = dplyr::lag(DID, n = 2),
+           lag3 = dplyr::lag(DID, n = 3),
+           lag4 = dplyr::lag(DID, n = 4),
+    ) %>%
+    tabyl(lag4)
+    feols(n_total ~ lead1 + lead2 + DID + lag1 + lag2 + lag3 + lag4,
           data = .)
 
-data %>%
-  filter(is.na(State_Code) == F) %>%
-  filter(State_Code != "MA") %>%
-  filter(Year >= 2005) %>%
-  filter(State_Code %in% treated_states) %>%
-  mutate(Zone = if_else(#State_Code %notin% treated_states, 0, 1),
-    (State_Code %in% treated_states & distma > zone_cut) &
-    (State_Code %in% treated_states & distma < 2 * zone_cut),
-    # (State_Code %in% treated_states & is.na(distma)),
-    0, 1),
-         Yt0 = if_else(Year == 2012, 1, 0),
-         log_n = log(1 + n1_4),
-         perc = n1_4 / n_total) %>%
-    feols(n_total ~ (Zone * to_factor(Year)) | Zone + to_factor(Year),
-          data = .)
+
+etable(est0, est1)
+
+names(cty_data)
+
+
+
 
 # }}}
 #
@@ -401,8 +289,6 @@ treat_sts %>%
 # 1. Average
 # 2. Sum
 
-
-
 ### 1. Average Number of Shops in zip code
 data %>%
   filter(is.na(distma) == F) %>%
@@ -413,14 +299,13 @@ data %>%
       distma <= 2 * zone_cut ~ "Next to Border",
     (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"
   )) %>%
-  group_by(State_Code, Zone, Year) %>%
-  # mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
+  group_by(State_Code, Zone_Band, Year) %>%
   mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
   ungroup() %>%
-  select(State_Code, Zone, Year, Shops) %>%
+  select(State_Code, Zone_Band, Year, Shops) %>%
   distinct() %>%
   # ggplot(aes(x = Year, y = Sum_n1_4, color = factor(Zone))) +
-  ggplot(aes(x = Year, y = Shops, color = Zone)) +
+  ggplot(aes(x = Year, y = Shops, color = factor(Zone_Band))) +
   geom_line() +
   geom_vline(xintercept = 2012) +
   facet_wrap(~State_Code, scales = "free")
@@ -467,7 +352,81 @@ data %>%
   facet_wrap(~State_Code, scales = "free")
 
 # }}}
+
+
+
+# B.1b Zip Codes CT and NH *only*: Border v Inner
+# One graph for *EACH* border state {{{
+# -------------------------------------
 #
+# 1. Average
+# 2. Sum
+
+print(zone_cut)
+### 1. Average Number of Shops in zip code
+data %>%
+  filter(State_Code %in% c("NH", "CT")) %>%
+  # filter(Year >= 2000 & Year <= 2014) %>%
+  mutate(Zone = case_when(
+    distma <= zone_cut ~ "Border",
+    distma > zone_cut &
+      distma <= 2 * zone_cut ~ "Next to Border",
+    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"
+  )) %>%
+  group_by(State_Code, Zone, Year) %>%
+  # mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
+  mutate(Shops = mean(as.numeric(n_total), na.rm = T)) %>%
+  ungroup() %>%
+  select(State_Code, Zone, Year, Shops) %>%
+  distinct() %>%
+  ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
+  geom_line() +
+  geom_vline(xintercept = 2012) +
+  facet_wrap(~State_Code, scales = "free")
+
+
+data %>% filter(is.na(distma) == F) %>%
+  mutate(Zone = case_when(
+    distma <= zone_cut ~ "Border",
+    distma > zone_cut &
+      distma <= 2 * zone_cut ~ "Next to Border",
+    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner",
+         T_Year = if_else(Year >= 2012, 1, 0),
+         T = if_else(Zone == "Border" & T_Year == 1, 1, 0)) %>%
+  filter(Zone != "Inner") %>%
+  filter(Year <= 2014) %>%
+  feols(n1_4 ~ T | to_factor(Year) + to_factor(zip),
+        data = .)
+
+
+
+### 2. Sum of Shops in zip code
+### Exclude inner
+data %>%
+  filter(is.na(distma) == F) %>%
+  # filter(Year >= 2000 & Year <= 2016) %>%
+  mutate(Zone = case_when(
+    distma <= zone_cut ~ "Border",
+    distma > zone_cut &
+      distma <= 2 * zone_cut ~ "Next to Border",
+    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"
+  )) %>%
+  filter(Zone != "Inner") %>%
+  group_by(State_Code, Zone, Year) %>%
+  # mutate(Shops = mean(as.numeric(n1_4), na.rm = T)) %>%
+  mutate(Shops = sum(as.numeric(n1_4), na.rm = T)) %>%
+  ungroup() %>%
+  select(State_Code, Zone, Year, Shops) %>%
+  distinct() %>%
+  # ggplot(aes(x = Year, y = Sum_n1_4, color = factor(Zone))) +
+  ggplot(aes(x = Year, y = Shops, color = Zone)) +
+  geom_line() +
+  geom_vline(xintercept = 2012) +
+  facet_wrap(~State_Code, scales = "free")
+
+# }}}
+#
+
 # -------------------------------------
 
 
@@ -557,6 +516,57 @@ treat_sts %>%
 #
 # -------------------------------------
 
+
+# ------------------
+# Practice DiD regs
+# ------------------
+
+for (i in treated_states) {
+    print(i)
+    mod_next <- data %>%
+        filter(State_Code == i) %>%
+        mutate(Zone = case_when(
+                    distma <= zone_cut ~ "Border",
+                    distma > zone_cut &
+                        distma <= 2 * zone_cut ~ "Next",
+                    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"),
+               Tz = if_else(Zone == "Border", 1, 0),
+               Ty = if_else(Year >= 2012, 1, 0)) %>%
+        filter(Year >= 2006 & Zone != "Inner") %>%
+        feols(n_total ~ (Tz * Ty) | to_factor(Year) + to_factor(zip),
+              data = .)
+    mod_inner <- data %>%
+        filter(State_Code == i) %>%
+        mutate(Zone = case_when(
+                    distma <= zone_cut ~ "Border",
+                    distma > zone_cut &
+                        distma <= 2 * zone_cut ~ "Next",
+                    (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"),
+               Tz = if_else(Zone == "Border", 1, 0),
+               Ty = if_else(Year >= 2012, 1, 0)) %>%
+        filter(Year >= 2006 & Zone != "Next") %>%
+        feols(n_total ~ (Tz * Ty) | to_factor(Year) + to_factor(zip),
+              data = .)
+        print(paste("State:", i))
+        print("\\nNext to Border")
+        print(mod_next)
+        print("\\nInner")
+        print(mod_inner)
+}
+
+
+data %>%
+    filter(State_Code == "CT") %>%
+    mutate(Zone = case_when(
+                distma <= zone_cut ~ "Border",
+                distma > zone_cut &
+                    distma <= 2 * zone_cut ~ "Next",
+                (distma > 2 * zone_cut) | (is.na(distma)) ~ "Inner"),
+           Tz = if_else(Zone == "Border", 1, 0),
+           Ty = if_else(Year >= 2012, 1, 0)) %>%
+    filter(Year >= 2006 & Zone != "Inner") %>%
+    feols(n_total ~ (Tz * to_factor(Year)) | to_factor(zip),
+          data = .)
 
 
 
