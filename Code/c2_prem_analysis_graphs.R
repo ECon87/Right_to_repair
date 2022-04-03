@@ -45,7 +45,6 @@ source(paste0(codedir, "c2a_inner_data_manipulation.R"))
 
 
 
-####### Drop if in treated state and missing distance ###########
 ### missing Zone_Band -> distma > 200
 
 treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
@@ -68,6 +67,37 @@ data <- data %>%
                 is.na(Zone_Band), 201, Zone_Band))
  
 
+
+names(data)
+
+tabyl(data, Year)
+
+data <- data %>%
+    mutate(PostTreat = if_else(Year >= 2012, 1, 0)) %>%
+    group_by(zip, PostTreat) %>%
+    mutate(
+       sc_Population = mean(Population),
+       sc_Inc_percapita = mean(Inc_percapita),
+       sc_allmv_total = mean(allmv_total),
+       sc_vehicle_miles = mean(vehicle_miles)) %>%
+    ungroup()
+
+
+tabyl(data, PostTreat)
+
+cov.var <- c("sc_Population", "sc_Inc_percapita",
+             "sc_allmv_total", "sc_vehicle_miles")
+
+match.out <- c("n_total", "n1_4", "n5_9", "n10_19")
+
+sc_model <- microsynth(data,
+                       idvar = "zip", timevar = "Year", intvar = "Treat",
+                       start.pre = 2000, end.pre = 2011, end.post = 2016,
+                       match.out = match.out, match.covar = cov.var, 
+                       result.var = match.out, omnibus.var = match.out,
+                       test = "lower",
+                       perm = 250, jack = TRUE,
+                       n.cores = min(parallel::detectCores(), 2))
 
 
 # =========================================================================
