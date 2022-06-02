@@ -2,6 +2,10 @@ library(dplyr)
 library(ggplot2)
 library(janitor)
 library(fixest)
+# library(did) # Callaway/SantAnna (fixest does sun and abraham)
+# library(did2s)
+library(microsynth)
+library(tidysynth)
 library(sjmisc)
 library(broom)
 library(tidysynth)
@@ -16,7 +20,7 @@ library(kableExtra)
 #   * directories *
 # ===============================================
 
-rootdir <- "/home/econ87/Research/Papers/Right_to_repair/Note/"
+rootdir <- "/home/econ87/Documents/Research/Papers/Right_to_repair/Note/"
 datadir <- paste0(rootdir, "Data/")
 codedir <- paste0(rootdir, "Code/")
 
@@ -49,6 +53,8 @@ row.names(data) <- NULL
 treated_states <- c("MA", "RI", "VT", "NY", "CT", "NH")
 
 zone_cuts <- c(sort(unique(data$Zone_Band)))
+
+
 zone_cut <- 25
 
 
@@ -61,8 +67,7 @@ zone_cut <- 25
 source(paste0(codedir, "c2a_inner_data_manipulation.R"))
 
 
-
-### Fix Zone Band so that the cutoff is at 200
+### Fix Zone Band so that the cutoff is at200
 ### missing Zone_Band -> distma > 200
 # continuous measure until 200, and then 201 for those zipcodes
 # that are over 200 miles.
@@ -79,7 +84,7 @@ data <- data %>%
 #           DiD: GRAPHS and Regressions
 #     (might move the regressions in their own file.)
 #
-#
+
 # The cross-tabulation of Zone and State suggests only CT and NH
 # have sufficient number of observations within and outside 25 miles.
 # RI have a lot of observations within 15 miles.
@@ -113,44 +118,39 @@ data %>%
 # Graphical inspection: Y = n1_4, n_total, n_total per capita
 #
 # A. State level: Parralel trends fails
-# 
+#
 # B. Zip Code level:
 #  B.1. Border (Treat) vs Rest of US (Control)
 #  B.2. Border (Treat) vs Inner (Control)
 # ========================================================
 
 # ----------------------------
+# ----------------------------
 #       A. State level
 # ----------------------------
 
 state_data <- merge(data, fha_state, all.x = T)
-dim(data) - dim(state_data)
-
-# DC is missing
-state_data %>%
-    filter(is.na(allmv_pub_state)) %>%
-    tabyl(State_Code)
+print(dim(data) - dim(state_data)) # DC is missing
 
 
-# **************
-# A.1. All states
-# **************
 
-# Y = n_total per capita
-# Treatment: all states (MA, RI, VT, CT, NH)
+# *****************************
+# A.1. All states (DID)
 # Control: Rest of the US
-
-
+# Parallel Trends do NOT hold
+# *****************************
 
 tmp_data <- state_data %>%
-    # mutate(Treat_i = if_else(State_Code == "MA", 1, 0),
-           # Treat_yr = if_else(Year >= 2012, 1, 0)) %>%
-    mutate(Treat_i = if_else(State_Code %in% treated_states, 1, 0),
+    mutate(Treat_i = if_else(
+             (State_Code %in% c("MA", "CT", "RI", "VT", "NH")) |
+             (State_Code == "NY" & distma < zone_cut), 1, 0),
            Treat_yr = if_else(Year >= 2012, 1, 0)) %>%
     group_by(State_Code, Year) %>%
-    mutate(Total_shops_1_4_percap = sum(n1_4) / State_Population,
-           Total_shops_percap = sum(n_total) / State_Population,
-           aver_income_percap = mean(Inc_percapita, na.rm = T)) %>%
+    mutate(Total_shops_1_4_percap = 1000 * sum(n1_4) / State_Population,
+           Total_shops_percap = 1000 * sum(n_total) / State_Population,
+           aver_income_percap = mean(Inc_percapita, na.rm = T),
+           allmv_total_state = allmv_total_state / State_Population,
+           vehicle_miles_state = vehicle_miles_state / State_Population) %>%
     ungroup() %>%
     select(State_Code, Year,
            Treat_i, Treat_yr,
@@ -160,113 +160,172 @@ tmp_data <- state_data %>%
            aver_income_percap, allmv_total_state, vehicle_miles_state) %>%
     distinct()
 
+# All states DID {{{
+
+zone_cut <- 100
+
+
+
+tmp_data <- tmp_data %>%
+  filter(State_Code %in% c("CT", "RI", "VT", "NH") |
+         State_Code %in% c("ME", "PA", "NJ"))
 
 tmp_data %>%
-    group_by(Treat_i, Year) %>%
-    mutate(Total_shops_percap = 1000 * mean(Total_shops_percap, na.rm = T)) %>%
-    ungroup() %>%
-    select(State_Code, Treat_i, Treat_yr, Year,
-           Total_shops_percap,
-           aver_income_percap, allmv_total_state, vehicle_miles_state) %>%
-    distinct() %>%
-    ggplot(aes(x = Year, y = Total_shops_percap, color = factor(Treat_i))) +
-    geom_line() +
-    geom_vline(xintercept = 2012)
-
-
-tmp_data <- data %>%
-    # mutate(Treat_i = if_else(State_Code == "MA", 1, 0),
-           # Treat_yr = if_else(Year >= 2012, 1, 0)) %>%
-    mutate(Treat_i = if_else(State_Code %in% treated_states, 1, 0),
-           Treat_yr = if_else(Year >= 2012, 1, 0)) %>%
-    group_by(State_Code, Year) %>%
-    mutate(Total_shops_1_4 = mean(n1_4 / Population),
-           Total_shops = sum(n_total / Population)) %>%
-    ungroup() %>%
-    select(State_Code, Year,
-           Treat_i, Treat_yr,
-           Total_shops, State_Population,
-           aver_income_percap, allmv_total_state, vehicle_miles_state) %>%
-    distinct() %>%
-    mutate(Total_shops_percap = 1000 * Total_shops / State_Population)
-
-
-libra
-
-tmp_data %>%
-    # filter(Year >= 2008) %>%
-    group_by(Treat_i, Year) %>%
-    mutate(Total_shops_percap = mean(Total_shops_percap, na.rm = T)) %>%
-    ungroup() %>%
-    select(State_Code, Treat_i, Treat_yr, Year,
-           Total_shops_percap,
-           aver_income_percap, allmv_total_state, vehicle_miles_state) %>%
-    distinct() %>%
-    ggplot(aes(x = Year, y = Total_shops_percap, color = factor(Treat_i))) +
-    geom_line() +
-    geom_vline(xintercept = 2012)
+  filter(Year >= 2006) %>%
+  group_by(Treat_i, Year) %>%
+  mutate(Total_shops_percap = mean(Total_shops_percap, na.rm = T)) %>%
+  ungroup() %>%
+  select(State_Code, Treat_i, Treat_yr, Year, Total_shops_percap) %>%
+  distinct() %>%
+  ggplot(aes(x = Year, y = Total_shops_percap, color = factor(Treat_i))) +
+  geom_line() +
+  geom_vline(xintercept = 2012)
 
 
 
-r0_did <- tmp_data %>%
-    filter(Year >= 2005) %>%
-    feols(Total_shops_percap ~ (Treat_i * Treat_yr) | Year + State_Code,
-          data = .)
+## ---------------
+## Regressions
 
 
-r0_event <- tmp_data %>%
-    filter(Year >= 2005) %>%
-    mutate(Treat_yr = Year - 2012) %>%
+est_st_us_did <- tmp_data %>%
+    filter(Year >= 2006) %>%
     feols(Total_shops_percap ~ aver_income_percap + allmv_total_state +
-          vehicle_miles_state + i(Treat_yr, Treat_i, ref = -1) |
-          Year + State_Code,
+                               vehicle_miles_state +
+                               (Treat_i * Treat_yr) | Year + State_Code,
           data = .)
 
-etable(r0_did, r0_event)
 
-iplot(r0)
-
-sts <- 50
-yrs <- 10
-exdf <- data.frame(
-  id = c(rep(seq(1, sts), times = rep(yrs, sts))),
-  yr = c(rep(seq(1, yrs), sts))
-)
+est_st_us_event <- tmp_data %>%
+    filter(Year >= 2006) %>%
+    mutate(ToT = Year - 2012) %>%
+    feols(Total_shops_percap ~ aver_income_percap + allmv_total_state +
+                               vehicle_miles_state +
+                               i(ToT, Treat_i, ref = -1) | Year + State_Code,
+          data = .)
 
 
-                   
-exdf <- exdf %>%
-  mutate(
-    Treat_i = if_else(id <= 10, 1, 0),
-    Treat_yr = if_else(yr >= 6, 1, 0),
-    time_to_treat = yr - 6,
-    max_tot = if_else(time_to_treat < 0, 0, time_to_treat + 1)
-  )
+etable(est_st_us_did, est_st_us_event)
 
-exdf$y <- 0.15 * exdf$max_tot * exdf$Treat_i
-exdf$y <- 0.5 * exdf$max_tot * exdf$Treat_i + rnorm(4 * c)
+iplot(est_st_us_event)
 
 
-exdf %>%
-  group_by(Treat_i, Treat_yr) %>%
-  summarize(m = mean(y))
-
-exdf %>%
-  feols(y ~ (Treat_yr * Treat_i) | id + yr,
-    data = .
-  )
-
-exdf %>%
-  feols(y ~ i(time_to_treat, Treat_i, -1) |
-          id + yr,
-        data = .)
+# }}}
 
 
-data(base_did)
+## *********************
+## Synthetic Control
+## *********************
 
 
-est_did <- feols(y ~ x1 + i(period, treat, 5) | id + period, base_did)
-etable(est_did)
+
+
+tmp_data_syn <- tmp_data %>%
+    group_by(State_Code) %>%
+    mutate(aver_income_percap = mean(aver_income_percap, na.rm = T),
+           allmv_total_state = 1000 * round(mean(allmv_total_state, na.rm = T), 3),
+           vehicle_miles_state = 1000 * round(mean(vehicle_miles_state, na.rm = T), 3)
+           ) %>%
+    ungroup()
+
+
+
+
+options(scipen=999)
+
+
+tmp_data_syn %>%
+    select(!!cov.var) %>%
+    head()
+
+
+# all states synthetic control (microsynth) {{{
+
+
+# Declare covariates (time-invariant)
+cov.var <- c("aver_income_percap", "allmv_total_state", "vehicle_miles_state")
+cov.var <- c()
+
+# Outcome variables (time-variant)
+match.out <- c("Total_shops_1_4_percap", "Total_shops_percap")
+
+msynth_ex1 <- microsynth(tmp_data_syn,
+                        idvar = "State_Code",
+                        timevar = "Year",
+                        intvar = "Treat_i",
+                        start.pre = 2000, end.pre = 2011, end.post = 2016,
+                        match.out = match.out,
+                        match.covar = cov.var,
+                        result.var = match.out,
+                        omnibus.var = match.out,
+                        test = "lower",
+                        n.cores = min(parallel::detectCores(), 2))
+
+
+# Call it
+msynth_ex1
+
+summary(msynth_ex1)
+plot_microsynth(msynth_ex1, plot.var = "Total_shops_percap")
+
+# }}}
+
+
+
+## Tidysynth
+
+
+for (st in treated_states) {
+  print(st)
+}
+
+tmp_data %>%
+    filter(is.na(vehicle_miles_state)) %>%
+    head()
+
+st <- "CT"
+nh_synt <- tmp_data %>%
+    filter(is.na(vehicle_miles_state) == F) %>%
+    filter(State_Code == st | State_Code %notin% treated_states) %>%
+    synthetic_control(outcome = Total_shops_percap,
+                      unit = State_Code,
+                      time = Year,
+                      i_unit = st,
+                      i_time = 2012,
+                      generate_placebos = T) %>%
+    ##  generate_predictor(time_window = 2000:2011,
+    ##                  inc = mean(aver_income_percap, na.rm = T),
+    ##                  miles = mean(vehicle_miles_state, na.rm = T),
+    ##                  allmv = mean(allmv_total_state, na.rm = T)) %>%
+    generate_predictor(time_window = 2000:2011,
+                    inc = mean(aver_income_percap, na.rm = T),
+                    miles = mean(vehicle_miles_state, na.rm = TRUE)) %>%
+    generate_predictor(time_window = 2000, shops_2000 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2002, shops_2002 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2003, shops_2003 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2004, shops_2004 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2005, shops_2005 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2006, shops_2006 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2007, shops_2007 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2008, shops_2008 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2009, shops_2009 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2010, shops_2010 = Total_shops_percap) %>%
+    generate_predictor(time_window = 2011, shops_2011 = Total_shops_percap) %>%
+    # Generate the fitted weights for the synthetic control
+    generate_weights(optimization_window = 2000:2011,
+                    margin_ipop = .02,
+                    sigf_ipop = 7,
+                    bound_ipop = 6 # optimizer options
+    ) %>%
+    # Generate the synthetic control
+    generate_control()
+
+nh_synt %>% plot_trends()
+nh_synt %>% plot_differences()
+nh_synt %>% plot_weights()
+nh_synt %>% plot_placebos()
+nh_synt %>% plot_placebos(prune = F)
+
+
 
 
 # ---------------------------------------
@@ -275,28 +334,41 @@ etable(est_did)
 # One graph for *ALL* border state {{{
 # ----------------------------------
 
-# Y: n1_4
+tmp_data <- data %>%
+    mutate(Treat_i = if_else(State_Code %in% treated_states &
+                             distma <= zone_cut, 1, 0),
+           Treat_yr = if_else(Year >= 2012, 1, 0)) %>%
+    ## group_by(State_Code, Year) %>%
+    mutate(Total_shops_1_4_percap = 1000 * n1_4 / Population,
+           Total_shops_percap = 1000 * n_total / Population) %>%
+    ## ungroup() %>%
+    select(State_Code, Year, zip,
+           Treat_i, Treat_yr,
+           Total_shops_1_4_percap,
+           Total_shops_percap)
+
+
 rest_us <- data %>%
-  filter(State_Code %notin% treated_states |
-    (State_Code %in% treated_states & distma > zone_cut) |
-    (State_Code %in% treated_states & is.na(distma))) %>%
   filter(State_Code != "MA") %>%
+  filter(State_Code %notin% treated_states |
+         (State_Code %in% treated_states & distma > zone_cut) |
+         (State_Code %in% treated_states & is.na(distma))) %>%
   filter(is.na(State_Code) == F) %>%
-  mutate(Zone = 0) %>%
+  mutate(Treat_i = 0) %>%
   group_by(Year) %>%
-  mutate(Shops = mean(n1_4, na.rm = T)) %>%
+  mutate(Total_shops_percap = 1000 * mean(n_total / Population, na.rm = T)) %>%
   ungroup() %>%
-  select(Year, Zone, Shops) %>%
+  select(Year, Treat_i, Total_shops_percap) %>%
   distinct()
 
 treat_sts <- data %>%
-  filter(State_Code %in% treated_states & distma <= zone_cut) %>%
   filter(State_Code != "MA") %>%
-  mutate(Zone = 1) %>%
-  group_by(Zone, Year) %>%
-  mutate(Shops = mean(n1_4, na.rm = T)) %>%
+  filter(State_Code %in% treated_states & distma <= zone_cut) %>%
+  mutate(Treat_i = 1) %>%
+  group_by(Year) %>%
+  mutate(Total_shops_percap = 1000 * mean(n_total / Population, na.rm = T)) %>%
   ungroup() %>%
-  select(Year, Zone, Shops) %>%
+  select(Year, Treat_i, Total_shops_percap) %>%
   distinct()
 
 
@@ -304,9 +376,51 @@ treat_sts <- rbind(treat_sts, rest_us)
 
 treat_sts %>%
   filter(Year >= 2006) %>%
-  ggplot(aes(x = Year, y = Shops, color = factor(Zone))) +
+  ggplot(aes(x = Year, y = Total_shops_percap, color = factor(Treat_i))) +
   geom_line() +
   geom_vline(xintercept = 2012)
+
+
+
+# ---------
+
+zone_cut <- 20
+
+data %>%
+    filter(State_Code %in% treated_states & is.na(distma)) %>%
+    dim()
+
+tmp_data <- data %>%
+    filter(State_Code != "MA") %>%
+    filter(is.na(State_Code) == F) %>%
+    mutate(Treat_i = case_when(
+                State_Code %notin% treated_states |
+                (State_Code %in% treated_states & distma > zone_cut) |
+                (State_Code %in% treated_states & is.na(distma)) ~ 0,
+                State_Code %in% treated_states & distma <= zone_cut ~ 1),
+           Treat_yr = if_else(Year >= 2012, 1, 0),
+           Total_shops_percap = 1000 * n_total / Population)
+
+
+
+est_st_us_did <- tmp_data %>%
+    filter(Year >= 2006) %>%
+    feols(Total_shops_percap ~ Inc_percapita + allmv_total +
+                               vehicle_miles +
+                               (Treat_i * Treat_yr) | Year + Treat_i,
+          data = .)
+
+
+est_st_us_event <- tmp_data %>%
+    filter(Year >= 2006) %>%
+    mutate(ToT = Year - 2012) %>%
+    feols(Total_shops_percap ~ Inc_percapita + allmv_total +
+                               vehicle_miles +
+                               i(ToT, Treat_i, ref = -1) | Year + Treat_i,
+          data = .)
+
+
+etable(est_st_us_did, est_st_us_event)
 
 
 # }}}
@@ -439,6 +553,60 @@ treat_sts %>%
 
 # B.1.1. Average
 
+zone_cut <- 100
+
+tmp_data <- data %>%
+    filter(State_Code %in% treated_states &
+           State_Code != "MA") %>%
+    group_by(State_Code, County, Year) %>%
+    mutate(Treat_i  = if_else(min(distma, na.rm = T) <= zone_cut, 1, 0),
+           Treat_yr = if_else(Year >= 2012, 1, 0),
+           Total_shops_percap = 1000 * sum(n_total) / Population) %>%
+    ungroup() %>%
+    group_by(Treat_i, Year) %>%
+    mutate(Total_shops_percap = mean(Total_shops_percap)) %>%
+    ungroup() %>%
+    select(Treat_i, Year, Treat_yr, Total_shops_percap) %>%
+    distinct()
+
+tmp_data %>%
+    ggplot(aes(x = Year, y = Total_shops_percap, color = factor(Treat_i))) +
+    geom_line() +
+    geom_vline(xintercept = 2012)
+
+
+
+
+qmp_data <- state_data %>%
+    group_by(State_Code, County) %>%
+    mutate(min_distma = min(distma, na.rm = T)) %>%
+    mutate(Treat_i = if_else(distma <= zone_cut, 1, 0),
+           Treat_yr = if_else(Year >= 2012, 1, 0)) %>%
+    group_by(State_Code, County, Year) %>%
+    mutate(Total_shops_1_4_percap = sum(n1_4) / Population,
+           Total_shops_percap = sum(n_total) / Population,
+           aver_income_percap = mean(Inc_percapita, na.rm = T)) %>%
+    ungroup() %>%
+    select(State_Code, County, Year,
+           Treat_i, Treat_yr,
+           Total_shops_1_4_percap,
+           Total_shops_percap,
+           State_Population,
+           aver_income_percap, allmv_total_state, vehicle_miles_state) %>%
+    distinct()
+
+
+tmp_data %>%
+    group_by(Treat_i, Year) %>%
+    mutate(Total_shops_percap = 1000 * mean(Total_shops_percap, na.rm = T)) %>%
+    ungroup() %>%
+    select(State_Code, Treat_i, Treat_yr, Year,
+           Total_shops_percap,
+           aver_income_percap, allmv_total_state, vehicle_miles_state) %>%
+    distinct() %>%
+    ggplot(aes(x = Year, y = Total_shops_percap, color = factor(Treat_i))) +
+    geom_line() +
+    geom_vline(xintercept = 2012)
 
 #
 # }}}
