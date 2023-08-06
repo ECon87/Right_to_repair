@@ -1,0 +1,19 @@
+* News Articles
+
+ 
+** [[https://www.wired.com/story/fight-right-repair-cars-turns-ugly/][Wired article]]
+   Subaru and Kia dealers in MA have disabled systems that allow remote starts and send maintenance alerts.
+   Are older cars (prior to 2012) included in the right-to-repair legislation?
+   If so, where the systems disabled for these older cars as well?
+
+   "...The worst part was that if the Ferrellis lived just a mile away, in Rhode Island, they would have the features..."
+   "...Subaru disabled the telematics system and associated features on new cars registered in Massachusetts last year as part of a spat over a right-to-repair ballot measure approved, overwhelmingly, by the state’s voters in 2020..."
+
+   "In 2012, Massachusetts voters passed a similar ballot measure that, for the first time, required automakers to use nonproprietary onboard diagnostics ports on every vehicle."
+   "A year later, the initiative formed the basis of a nationwide agreement. Automakers guaranteed that car owners and mechanics would have access to the same kinds of tools, software, and information that they give to their own franchised car dealers. As a result, today anyone can buy a tool that will plug into a car’s port, accessing diagnostic codes that clue them in to what’s wrong. Mechanics are able to purchase tools and subscriptions to manuals that guide them through repairs."
+
+   
+** [[https://en.wikipedia.org/wiki/Motor_Vehicle_Owners%27_Right_to_Repair_Act][Wikipedia]]
+   "Early in 2014, the Automotive Aftermarket Industry Association, Coalition for Auto Repair Equality, Alliance of Automobile Manufacturers, and the Association for Global Automakers signed a Memorandum of Understanding that is based on the Massachusetts law and which would commit the vehicle manufacturers to meet the requirements of the Massachusetts law in all fifty states..."
+
+   Referenced article: [[https://www.autonews.com/article/20140125/RETAIL05/301279936/automakers-agree-to-right-to-repair-deal][Automotive New (paywall)]]
